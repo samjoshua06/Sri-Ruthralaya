@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { z } = require('zod');
 const { db, fallbackStore, getIsDbConnected, isProduction, recordAdminActivity, getAdminInfoFromReq } = require('../config/db');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/token');
+const { sendPasswordResetEmail, isEmailConfigured } = require('../services/emailService');
 
 // Zod validation schemas
 const registerSchema = z.object({
@@ -413,6 +414,8 @@ async function forgotPassword(req, res, next) {
       user = fallbackStore.users.find(u => u.email.toLowerCase() === normalizedEmail);
     }
 
+    let emailResult = null;
+
     if (user) {
       // Generate secure 6-digit random OTP
       const otp = crypto.randomInt(100000, 999999).toString();
@@ -426,16 +429,29 @@ async function forgotPassword(req, res, next) {
         expiresAt,
       });
 
-      // In production with email service configured, send via email.
-      // Log to secure server console for deployment audit and testing.
-      console.log(`[AUTH] 📧 Password reset verification code generated for ${normalizedEmail}: ${otp} (expires in 10 minutes)`);
+      // Dispatch verification email via SMTP/Gmail
+      emailResult = await sendPasswordResetEmail(normalizedEmail, otp);
+    }
+
+    // If SMTP is not configured, inform the user with the generated code so they are not blocked
+    if (emailResult && !emailResult.delivered) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          devOtp: emailResult.otp,
+          emailDelivered: false,
+        },
+        message: `Verification code: ${emailResult.otp} (SMTP email service not configured on server).`,
+      });
     }
 
     // Generic safe response to prevent user enumeration
     return res.status(200).json({
       success: true,
-      data: null,
-      message: 'If an account exists for this email, a password reset code has been sent.',
+      data: {
+        emailDelivered: true,
+      },
+      message: 'If an account exists for this email, a verification code has been dispatched to your inbox.',
     });
   } catch (error) {
     next(error);

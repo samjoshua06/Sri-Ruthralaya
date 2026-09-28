@@ -24,6 +24,9 @@ export default function ForgotPasswordPage() {
       const res = await api.post('/auth/forgot-password', { email });
       if (res.data.success) {
         setMessage(res.data.message);
+        if (res.data.data?.devOtp) {
+          setOtp(res.data.data.devOtp);
+        }
         setStep(2);
       }
     } catch (err) {

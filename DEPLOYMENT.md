@@ -59,9 +59,11 @@ Under the **Environment Variables** section on Render, add these exact keys:
 | `OPENAI_API_KEY` | *(Optional)* | Fallback AI provider |
 | `ANTHROPIC_API_KEY` | *(Optional)* | Fallback AI provider |
 | `CLOUDINARY_URL` | *(Optional)* | Cloud media storage (defaults to local `/uploads` if not set) |
+| `EMAIL_USER` | *(Optional)* | Gmail or SMTP email address for sending password recovery OTPs |
+| `EMAIL_PASS` | *(Optional)* | Google 16-character App Password (from myaccount.google.com/apppasswords) |
 
 > [!TIP]
-> The backend server has intelligent CORS matching that automatically supports `.netlify.app` subdomains and deploy preview URLs.
+> The backend server has intelligent CORS matching that automatically supports `.netlify.app` subdomains and deploy preview URLs. If `EMAIL_USER` and `EMAIL_PASS` are omitted, the server will provide the recovery OTP in the API response so you are never locked out during development.
 
 ### Step 1.3: Deploy and Copy Backend URL
 1. Click **Deploy Web Service**.
