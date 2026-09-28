@@ -37,35 +37,35 @@ async function processMediaStorage(mediaUrl) {
     }
   }
 
-  // Save to backend/public/uploads/gallery
+  // Save local cache copy to backend/public/uploads/gallery if filesystem allows
   try {
     const matches = mediaUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-    if (!matches || matches.length !== 3) {
-      return mediaUrl;
+    if (matches && matches.length === 3) {
+      const mimeType = matches[1];
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      let ext = 'jpg';
+      if (mimeType.includes('png')) ext = 'png';
+      else if (mimeType.includes('webp')) ext = 'webp';
+      else if (mimeType.includes('mp4')) ext = 'mp4';
+      else if (mimeType.includes('jpeg')) ext = 'jpg';
+
+      const filename = `gal-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      const uploadDir = path.join(__dirname, '../../public/uploads/gallery');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, buffer);
     }
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    let ext = 'jpg';
-    if (mimeType.includes('png')) ext = 'png';
-    else if (mimeType.includes('webp')) ext = 'webp';
-    else if (mimeType.includes('mp4')) ext = 'mp4';
-    else if (mimeType.includes('jpeg')) ext = 'jpg';
-
-    const filename = `gal-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-    const uploadDir = path.join(__dirname, '../../public/uploads/gallery');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    const filePath = path.join(uploadDir, filename);
-    fs.writeFileSync(filePath, buffer);
-
-    return `/uploads/gallery/${filename}`;
   } catch (err) {
-    console.error('Failed to save media locally:', err.message);
-    return mediaUrl;
+    console.warn('Local file cache skipped:', err.message);
   }
+
+  // Without Cloudinary, storing the optimized data URL directly in PostgreSQL ensures
+  // photos remain permanently visible across Netlify, Render restarts, and ephemeral hosting.
+  return mediaUrl;
 }
 
 /**

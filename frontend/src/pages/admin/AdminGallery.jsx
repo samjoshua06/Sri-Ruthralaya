@@ -10,10 +10,12 @@ import {
   Filter,
   Eye,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import { getMediaUrl, optimizeImageFile } from '../../utils/media';
 
 export default function AdminGallery() {
   const [items, setItems] = useState([]);
@@ -30,6 +32,7 @@ export default function AdminGallery() {
     media_type: 'image',
   });
   const [imagePreview, setImagePreview] = useState('');
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   useEffect(() => {
     loadGallery();
@@ -116,22 +119,32 @@ export default function AdminGallery() {
     }
   };
 
-  // Handle File Upload from device
-  const handleFileChange = (e) => {
+  // Handle File Upload from device (up to 15MB limit)
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Image file is too large (maximum 8MB). Please choose a smaller photo.');
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Image file is too large (maximum 15MB). Please choose a photo under 15MB.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setForm((prev) => ({ ...prev, media_url: reader.result }));
-      setImagePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      setIsOptimizing(true);
+      const optimizedData = await optimizeImageFile(file, 1920, 0.88);
+      setForm((prev) => ({ ...prev, media_url: optimizedData }));
+      setImagePreview(optimizedData);
+    } catch (err) {
+      console.warn('Canvas optimization fallback, using direct reader:', err);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setForm((prev) => ({ ...prev, media_url: reader.result }));
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsOptimizing(false);
+    }
   };
 
   const categories = [
@@ -207,9 +220,13 @@ export default function AdminGallery() {
           >
             <div className="h-60 bg-[#0f0f0f] relative overflow-hidden">
               <img
-                src={item.media_url}
+                src={getMediaUrl(item.media_url)}
                 alt={item.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/BG1.png';
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
 
@@ -334,17 +351,31 @@ export default function AdminGallery() {
                       className="flex-grow px-3.5 py-2.5 rounded-xl border border-[#333333] text-xs focus:outline-none focus:border-[#d4af37] bg-[#0f0f0f] text-white"
                     />
 
-                    <label className="cursor-pointer px-3.5 py-2.5 rounded-xl bg-[#0f0f0f] hover:bg-[#1a1a1a] border border-[#333333] text-[#d4af37] text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Choose File</span>
+                    <label className={`cursor-pointer px-3.5 py-2.5 rounded-xl bg-[#0f0f0f] hover:bg-[#1a1a1a] border border-[#333333] text-[#d4af37] text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 transition-colors ${isOptimizing ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                      {isOptimizing ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#d4af37]" />
+                          <span>Optimizing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Choose File</span>
+                        </>
+                      )}
                       <input
                         type="file"
                         accept="image/*"
+                        disabled={isOptimizing}
                         onChange={handleFileChange}
                         className="hidden"
                       />
                     </label>
                   </div>
+
+                  <p className="text-[11px] text-[#888888]">
+                    Max file size: <span className="text-[#d4af37] font-semibold">15MB</span> (automatically optimized for high performance &amp; HD display).
+                  </p>
 
                   {/* Brand Presets */}
                   <div className="flex gap-1.5 flex-wrap">
@@ -385,11 +416,12 @@ export default function AdminGallery() {
                   {imagePreview && (
                     <div className="h-36 w-full rounded-xl overflow-hidden border border-[#d4af37]/40 bg-[#0a0a0a] relative mt-2">
                       <img
-                        src={imagePreview}
+                        src={getMediaUrl(imagePreview)}
                         alt="Preview"
                         className="w-full h-full object-cover object-center"
                         onError={(e) => {
-                          e.target.style.display = 'none';
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = '/BG1.png';
                         }}
                       />
                     </div>

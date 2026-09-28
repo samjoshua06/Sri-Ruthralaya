@@ -3,6 +3,7 @@ import { Image, Video, Sparkles, Filter, X, ZoomIn } from 'lucide-react';
 import api from '../../services/api';
 import TempleBorder from '../../components/common/TempleBorder';
 import KolamDivider from '../../components/common/KolamDivider';
+import { getMediaUrl } from '../../utils/media';
 
 const defaultGalleryItems = [
   {
@@ -147,9 +148,13 @@ export default function GalleryPage() {
               className="gallery-item h-[260px] overflow-hidden rounded-[10px] border border-[#333333] relative group cursor-pointer hover:border-[#d4af37] transition-all duration-300 shadow-xl bg-[#111111]"
             >
               <img
-                src={item.media_url}
+                src={getMediaUrl(item.media_url)}
                 alt={item.title}
                 className="w-full h-full object-cover block group-hover:scale-105 transition-transform duration-500"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/BG1.png';
+                }}
               />
 
               {/* Category pill on top right */}
@@ -191,9 +196,13 @@ export default function GalleryPage() {
 
               <div className="max-h-[70vh] flex items-center justify-center bg-black">
                 <img
-                  src={selectedMedia.media_url}
+                  src={getMediaUrl(selectedMedia.media_url)}
                   alt={selectedMedia.title}
                   className="max-h-[70vh] w-auto object-contain"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = '/BG1.png';
+                  }}
                 />
               </div>
 
