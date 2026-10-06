@@ -11,6 +11,7 @@ const noticeRoutes = require('./noticeRoutes');
 const galleryRoutes = require('./galleryRoutes');
 const chatbotRoutes = require('./chatbotRoutes');
 const adminRoutes = require('./adminRoutes');
+const paymentRoutes = require('./paymentRoutes');
 
 // Mount routes
 router.use('/auth', authRoutes);
@@ -23,6 +24,7 @@ router.use('/notices', noticeRoutes);
 router.use('/gallery', galleryRoutes);
 router.use('/chatbot', chatbotRoutes);
 router.use('/admin', adminRoutes);
+router.use('/', paymentRoutes); // POST /create-order, POST /verify-payment
 
 // Health check endpoint
 router.get('/health', (req, res) => {

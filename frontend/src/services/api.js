@@ -39,6 +39,7 @@ api.interceptors.response.use(
     // Avoid infinite loop on auth routes
     if (
       error.response?.status === 401 &&
+      error.response?.data?.code !== 'GATEWAY_AUTH_FAILED' &&
       !originalRequest._retry &&
       !originalRequest.url.includes('/auth/login') &&
       !originalRequest.url.includes('/auth/refresh')
