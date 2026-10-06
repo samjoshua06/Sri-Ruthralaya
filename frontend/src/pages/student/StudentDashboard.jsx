@@ -10,40 +10,143 @@ import {
   CheckCircle, 
   Sparkles, 
   Download,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import MudraIcon from '../../components/common/MudraIcon';
+import { loadRazorpay, RAZORPAY_KEY_ID } from '../../utils/razorpay';
+import { downloadReceiptPDF } from '../../utils/receipt';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const [studentData, setStudentData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState(null); // { type: 'success' | 'error' | 'info', message }
+
+  async function loadData() {
+    if (!user) return;
+    try {
+      const [profileRes, feeRes, attRes] = await Promise.all([
+        api.get(`/students/${user.id}`),
+        api.get('/fees/my-fees'),
+        api.get('/attendance/student'),
+      ]);
+
+      setStudentData({
+        profile: profileRes.data?.data || user,
+        fees: feeRes.data?.data || [],
+        attendance: attRes.data?.data || { stats: { attendancePercentage: 100, total: 0, present: 0, absent: 0 } },
+      });
+    } catch (err) {
+      console.warn('Student dashboard data fallback:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadData() {
-      if (!user) return;
-      try {
-        const [profileRes, feeRes, attRes] = await Promise.all([
-          api.get(`/students/${user.id}`),
-          api.get('/fees/my-fees'),
-          api.get('/attendance/student'),
-        ]);
-
-        setStudentData({
-          profile: profileRes.data?.data || user,
-          fees: feeRes.data?.data || [],
-          attendance: attRes.data?.data || { stats: { attendancePercentage: 100, total: 0, present: 0, absent: 0 } },
-        });
-      } catch (err) {
-        console.warn('Student dashboard data fallback:', err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, [user]);
+
+  const verifyPayment = async (response, fee) => {
+    setIsProcessing(true);
+    setPaymentStatus({ type: 'info', message: 'Verifying your payment with the academy server...' });
+    try {
+      const res = await api.post('/verify-payment', {
+        razorpay_order_id: response.razorpay_order_id,
+        razorpay_payment_id: response.razorpay_payment_id,
+        razorpay_signature: response.razorpay_signature,
+      });
+      if (res.data.success) {
+        setPaymentStatus({
+          type: 'success',
+          message: `Payment of ₹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.month || 'Current Month'} verified successfully! Payment ID: ${response.razorpay_payment_id}`,
+        });
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Dashboard payment verification failed:', err);
+      const msg = err.response?.data?.message || err.message || 'Payment verification failed.';
+      setPaymentStatus({
+        type: 'error',
+        message: `${msg} If money was debited, please contact the academy office with Payment ID ${response.razorpay_payment_id}.`,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePay = async (fee) => {
+    if (!fee) return;
+    setIsProcessing(true);
+    setPaymentStatus(null);
+
+    try {
+      const Razorpay = await loadRazorpay();
+
+      // Create order
+      const orderRes = await api.post('/create-order', { fee_id: fee.id });
+      const { order_id, amount, currency, key_id } = orderRes.data.data;
+
+      const rzp = new Razorpay({
+        key: RAZORPAY_KEY_ID || key_id,
+        amount,
+        currency,
+        order_id,
+        name: 'Sri Ruthralaya Academy',
+        description: `Tuition Fee - ${fee.month || 'Current Month'}`,
+        image: `${window.location.origin}/logo.png`,
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone ? String(user.phone).replace(/[^\d+]/g, '') : '',
+        },
+        notes: { fee_id: fee.id },
+        theme: { color: '#d4af37' },
+        handler: (response) => verifyPayment(response, fee),
+        modal: {
+          ondismiss: () => {
+            setIsProcessing(false);
+            setPaymentStatus((prev) =>
+              prev?.type === 'error' ? prev : { type: 'info', message: 'Payment cancelled. You can retry payment anytime.' }
+            );
+          },
+        },
+      });
+
+      rzp.on('payment.failed', (response) => {
+        const reason = response?.error?.description || 'The payment could not be completed.';
+        setPaymentStatus({
+          type: 'error',
+          message: `Payment failed: ${reason}`,
+        });
+      });
+
+      rzp.open();
+    } catch (err) {
+      console.error('Dashboard payment initiation failed:', err);
+      const msg = err.response?.data?.message || err.message || 'Unable to open payment modal. Please try again.';
+      setPaymentStatus({ type: 'error', message: msg });
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDownloadReceipt = async (fee) => {
+    if (!fee) return;
+    setDownloadingReceipt(true);
+    try {
+      await downloadReceiptPDF(fee.id, fee.month || 'Tuition_Fee');
+    } catch (err) {
+      alert(err.message || 'Failed to download receipt PDF.');
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
 
   const activeBatch = studentData?.profile?.activeBatch || user?.enrollments?.[0]?.batch || {
     name: 'Madhyama (Intermediate Jatiswaram & Shabdam)',
@@ -103,6 +206,36 @@ export default function StudentDashboard() {
         </div>
       </div>
 
+      {/* Payment Status Banner */}
+      {paymentStatus && (
+        <div
+          role="status"
+          className={`flex items-start gap-3 p-4 rounded-2xl border text-xs sm:text-sm ${
+            paymentStatus.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
+              : paymentStatus.type === 'error'
+              ? 'bg-red-950/60 border-red-800 text-red-300'
+              : 'bg-amber-950/40 border-amber-700/60 text-amber-200'
+          }`}
+        >
+          {paymentStatus.type === 'success' ? (
+            <CheckCircle className="w-5 h-5 shrink-0" />
+          ) : paymentStatus.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 shrink-0" />
+          ) : (
+            <Clock className="w-5 h-5 shrink-0" />
+          )}
+          <p className="flex-1">{paymentStatus.message}</p>
+          <button
+            onClick={() => setPaymentStatus(null)}
+            className="p-1 rounded-full hover:bg-white/10 transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         
@@ -147,26 +280,54 @@ export default function StudentDashboard() {
         </div>
 
         {/* Card 3: Fee Status */}
-        <div className="p-6 rounded-2xl bg-[#111111] border border-[#333333] hover:border-[#d4af37]/60 shadow-xl flex items-center justify-between transition-all group">
-          <div>
-            <span className="text-xs font-cinzel text-[#888888] uppercase tracking-wider block">
-              Term Fee Status
-            </span>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="font-cinzel font-bold text-xl text-white">
-                ₹{latestFee.amount}
+        <div className="p-6 rounded-2xl bg-[#111111] border border-[#333333] hover:border-[#d4af37]/60 shadow-xl flex flex-col justify-between transition-all group">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-cinzel text-[#888888] uppercase tracking-wider block">
+                Term Fee Status
               </span>
-              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                latestFee.status === 'paid' ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-amber-950/80 text-amber-400 border border-amber-800'
-              }`}>
-                {latestFee.status}
-              </span>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="font-cinzel font-bold text-xl text-white">
+                  ₹{Number(latestFee.amount).toLocaleString('en-IN')}
+                </span>
+                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                  latestFee.status === 'paid' ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-amber-950/80 text-amber-400 border border-amber-800'
+                }`}>
+                  {latestFee.status}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#666666] mt-1">{latestFee.month || 'Current Month'}</p>
             </div>
-            <p className="text-[11px] text-[#666666] mt-1">{latestFee.month || 'Current Month'}</p>
+            <div className="p-3.5 rounded-2xl bg-[#1a1a1a] text-[#d4af37] border border-[#333333] group-hover:border-[#d4af37]/60 group-hover:scale-105 transition-all">
+              <CreditCard className="w-6 h-6 text-[#d4af37]" />
+            </div>
           </div>
-          <div className="p-3.5 rounded-2xl bg-[#1a1a1a] text-[#d4af37] border border-[#333333] group-hover:border-[#d4af37]/60 group-hover:scale-105 transition-all">
-            <CreditCard className="w-6 h-6 text-[#d4af37]" />
-          </div>
+
+          {latestFee.status !== 'paid' ? (
+            <button
+              id="dashboard-pay-fee-btn"
+              onClick={() => handlePay(latestFee)}
+              disabled={isProcessing}
+              className="mt-3 w-full py-2 px-3 rounded-xl bg-[#d4af37] text-[#111111] hover:bg-[#ffd700] text-xs font-cinzel font-bold shadow flex items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              title="Pay tuition fee online via Razorpay"
+            >
+              {isProcessing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CreditCard className="w-3.5 h-3.5" />
+              )}
+              <span>{isProcessing ? 'Opening Razorpay...' : `Pay ₹${Number(latestFee.amount).toLocaleString('en-IN')} via Razorpay`}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleDownloadReceipt(latestFee)}
+              disabled={downloadingReceipt}
+              className="mt-3 w-full py-1.5 px-3 rounded-xl bg-[#0f0f0f] border border-[#333333] hover:border-[#d4af37] text-[#d4af37] text-xs font-cinzel font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+            >
+              {downloadingReceipt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              <span>{downloadingReceipt ? 'Downloading...' : 'Receipt PDF'}</span>
+            </button>
+          )}
         </div>
 
         {/* Card 4: Learning Milestone */}
@@ -311,8 +472,8 @@ export default function StudentDashboard() {
             </Link>
           </div>
 
-          {/* Quick PDF Receipt */}
-          {latestFee.status === 'paid' && (
+          {/* Quick PDF Receipt or Pay Fee Card */}
+          {latestFee.status === 'paid' ? (
             <div className="p-6 rounded-3xl bg-[#111111] border border-[#333333] shadow-xl text-center">
               <CreditCard className="w-8 h-8 text-[#d4af37] mx-auto mb-2" />
               <h4 className="font-cinzel text-xs font-bold text-white">
@@ -322,15 +483,41 @@ export default function StudentDashboard() {
                 Download your validated PDF receipt for {latestFee.month || 'Current Term'}
               </p>
 
-              <a
-                href={`/api/v1/fees/receipt/${latestFee.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0f0f0f] border border-[#d4af37] text-[#d4af37] hover:bg-[#d4af37] hover:text-[#111111] text-xs font-cinzel font-bold shadow transition-all"
+              <button
+                onClick={() => handleDownloadReceipt(latestFee)}
+                disabled={downloadingReceipt}
+                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0f0f0f] border border-[#d4af37] text-[#d4af37] hover:bg-[#d4af37] hover:text-[#111111] text-xs font-cinzel font-bold shadow transition-all disabled:opacity-50"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download PDF</span>
-              </a>
+                {downloadingReceipt ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#d4af37]" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{downloadingReceipt ? 'Downloading...' : 'Download PDF'}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="p-6 rounded-3xl bg-[#111111] border border-[#d4af37]/40 shadow-xl text-center">
+              <CreditCard className="w-8 h-8 text-[#d4af37] mx-auto mb-2" />
+              <h4 className="font-cinzel text-xs font-bold text-white">
+                Tuition Fee Pending
+              </h4>
+              <p className="text-[11px] text-[#888888] mt-0.5">
+                Term Fee: ₹{Number(latestFee.amount).toLocaleString('en-IN')} ({latestFee.month || 'Current Term'})
+              </p>
+
+              <button
+                onClick={() => handlePay(latestFee)}
+                disabled={isProcessing}
+                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#d4af37] text-[#111111] hover:bg-[#ffd700] text-xs font-cinzel font-bold shadow hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isProcessing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#111111]" />
+                ) : (
+                  <CreditCard className="w-3.5 h-3.5" />
+                )}
+                <span>{isProcessing ? 'Connecting...' : 'Pay via Razorpay'}</span>
+              </button>
             </div>
           )}
 

@@ -12,7 +12,8 @@ import {
   AlertCircle, 
   Phone, 
   Mail,
-  ShieldAlert
+  ShieldAlert,
+  Loader2,
 } from 'lucide-react';
 import api from '../../services/api';
 
@@ -25,6 +26,7 @@ export default function AdminStudents() {
   const [batchFilter, setBatchFilter] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
+  const [deletingStudentId, setDeletingStudentId] = useState(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -81,6 +83,23 @@ export default function AdminStudents() {
       await loadData();
     } catch (err) {
       console.error('Toggle status error:', err);
+    }
+  };
+
+  const handleDeleteStudent = async (student) => {
+    const confirmMsg = `Are you sure you want to permanently delete the student account for "${student.name}" (${student.email})?\n\nThis will remove their profile and login access.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingStudentId(student.id);
+    try {
+      const res = await api.delete(`/students/${student.id}`);
+      if (res.data.success) {
+        await loadData();
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete student account.');
+    } finally {
+      setDeletingStudentId(null);
     }
   };
 
@@ -241,15 +260,29 @@ export default function AdminStudents() {
                     {new Date(student.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
 
-                  <td className="p-4 text-right space-x-2">
+                  <td className="p-4 text-right space-x-2 whitespace-nowrap">
                     {student.status === 'pending' ? (
-                      <button
-                        onClick={() => handleApprove(student.id, batches[0]?.id)}
-                        className="px-3 py-1.5 rounded-lg bg-[#d4af37] text-[#111111] hover:brightness-110 text-xs font-cinzel font-bold shadow inline-flex items-center gap-1 transition-all"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Approve</span>
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleApprove(student.id, batches[0]?.id)}
+                          className="px-3 py-1.5 rounded-lg bg-[#d4af37] text-[#111111] hover:brightness-110 text-xs font-cinzel font-bold shadow inline-flex items-center gap-1 transition-all"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Approve</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStudent(student)}
+                          disabled={deletingStudentId === student.id}
+                          className="p-1.5 rounded-lg border border-rose-900/40 text-rose-400 bg-rose-950/20 hover:bg-rose-950/50 hover:border-rose-700 transition-all inline-flex items-center justify-center disabled:opacity-50"
+                          title="Reject / Delete registration"
+                        >
+                          {deletingStudentId === student.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </>
                     ) : (
                       <>
                         <button
@@ -269,6 +302,18 @@ export default function AdminStudents() {
                           title={student.status === 'active' ? 'Deactivate' : 'Reactivate'}
                         >
                           {student.status === 'active' ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStudent(student)}
+                          disabled={deletingStudentId === student.id}
+                          className="p-1.5 rounded-lg border border-rose-900/40 text-rose-400 bg-rose-950/20 hover:bg-rose-950/50 hover:border-rose-700 transition-all inline-flex items-center justify-center disabled:opacity-50"
+                          title="Delete student account permanently"
+                        >
+                          {deletingStudentId === student.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       </>
                     )}

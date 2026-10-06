@@ -275,9 +275,13 @@ async function generateReceiptPDF(req, res, next) {
     // Initialize PDF Document
     const doc = new PDFDocument({ margin: 45, size: 'A4' });
 
-    // Set headers for download
+    // Set headers for download / view
+    const isAttachment = req.query.download === 'true' || req.query.download === '1';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="Sri_Ruthralaya_Receipt_${id}.pdf"`);
+    res.setHeader(
+      'Content-Disposition',
+      `${isAttachment ? 'attachment' : 'inline'}; filename="Sri_Ruthralaya_Receipt_${id}.pdf"`
+    );
 
     doc.pipe(res);
 
@@ -378,10 +382,70 @@ async function generateReceiptPDF(req, res, next) {
   }
 }
 
+/**
+ * Delete a fee invoice (Admin only)
+ */
+async function deleteFee(req, res, next) {
+  try {
+    const { id } = req.params;
+    const isDb = getIsDbConnected();
+    const adminInfo = getAdminInfoFromReq(req);
+
+    if (isProduction && !isDb) {
+      return res.status(503).json({
+        success: false,
+        data: null,
+        message: 'Database service is currently unavailable. Please try again shortly.',
+      });
+    }
+
+    let existingFee = null;
+    if (isDb) {
+      existingFee = await db.fee.findUnique({ where: { id } });
+      if (!existingFee) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'Fee invoice record not found.',
+        });
+      }
+      await db.fee.delete({ where: { id } });
+    } else {
+      const idx = fallbackStore.fees.findIndex(f => f.id === id);
+      if (idx === -1) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'Fee invoice record not found.',
+        });
+      }
+      existingFee = fallbackStore.fees.splice(idx, 1)[0];
+    }
+
+    await recordAdminActivity({
+      ...adminInfo,
+      action: 'DELETE_FEE',
+      entity_type: 'fee',
+      entity_id: id,
+      title: 'Deleted Fee Invoice',
+      details: `Deleted fee invoice of ₹${existingFee.amount} (${existingFee.month || 'Tuition'})`,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { id },
+      message: 'Fee invoice deleted successfully.',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getAllFees,
   getMyFees,
   recordFee,
   payFee,
+  deleteFee,
   generateReceiptPDF,
 };

@@ -590,6 +590,96 @@ async function toggleStudentStatus(req, res, next) {
   }
 }
 
+/**
+ * Permanently delete student account (Admin only)
+ */
+async function deleteStudent(req, res, next) {
+  try {
+    const { id } = req.params;
+    const isDb = getIsDbConnected();
+    const adminInfo = getAdminInfoFromReq(req);
+
+    if (isProduction && !isDb) {
+      return res.status(503).json({
+        success: false,
+        data: null,
+        message: 'Database service is currently unavailable. Please try again shortly.',
+      });
+    }
+
+    if (isDb) {
+      const student = await db.user.findUnique({ where: { id } });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'Student account not found.',
+        });
+      }
+
+      // Clean up linked records in database before deleting user
+      try {
+        await db.$queryRaw('DELETE FROM enrollments WHERE student_id = $1', [id]);
+        await db.$queryRaw('DELETE FROM attendances WHERE student_id = $1', [id]);
+        await db.$queryRaw('DELETE FROM fees WHERE student_id = $1', [id]);
+        await db.$queryRaw('DELETE FROM notices WHERE student_id = $1', [id]);
+      } catch (cascadeErr) {
+        console.warn('Cascade delete linked tables warning:', cascadeErr.message);
+      }
+
+      await db.user.delete({ where: { id } });
+
+      await recordAdminActivity({
+        ...adminInfo,
+        action: 'DELETE_STUDENT',
+        entity_type: 'student',
+        entity_id: id,
+        title: 'Deleted Student Account',
+        details: `Permanently deleted student account for "${student.name}" (${student.email})`,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: { id },
+        message: `Student account for ${student.name} deleted successfully.`,
+      });
+    } else {
+      const idx = fallbackStore.users.findIndex(u => u.id === id);
+      if (idx === -1) {
+        return res.status(404).json({
+          success: false,
+          data: null,
+          message: 'Student account not found.',
+        });
+      }
+      const student = fallbackStore.users.splice(idx, 1)[0];
+
+      // Clean up related records in fallbackStore
+      fallbackStore.enrollments = fallbackStore.enrollments.filter(e => e.student_id !== id);
+      fallbackStore.attendances = fallbackStore.attendances.filter(a => a.student_id !== id);
+      fallbackStore.fees = fallbackStore.fees.filter(f => f.student_id !== id);
+      fallbackStore.notices = fallbackStore.notices.filter(n => n.student_id !== id);
+
+      await recordAdminActivity({
+        ...adminInfo,
+        action: 'DELETE_STUDENT',
+        entity_type: 'student',
+        entity_id: id,
+        title: 'Deleted Student Account',
+        details: `Permanently deleted student account for "${student.name}" (${student.email})`,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: { id },
+        message: `Student account for ${student.name} deleted successfully.`,
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getAllStudents,
   getStudentById,
@@ -597,4 +687,5 @@ module.exports = {
   approveStudent,
   updateStudent,
   toggleStudentStatus,
+  deleteStudent,
 };

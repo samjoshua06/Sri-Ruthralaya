@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Plus, Download, CheckCircle, Clock, AlertTriangle, Search, Filter, X } from 'lucide-react';
+import { CreditCard, Plus, Download, CheckCircle, Clock, AlertTriangle, Search, Filter, X, Trash2, Loader2 } from 'lucide-react';
 import api from '../../services/api';
+import { downloadReceiptPDF } from '../../utils/receipt';
 
 export default function AdminFees() {
   const [fees, setFees] = useState([]);
@@ -8,6 +9,8 @@ export default function AdminFees() {
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const [newFee, setNewFee] = useState({
     student_id: '',
@@ -67,6 +70,35 @@ export default function AdminFees() {
       await loadData();
     } catch (err) {
       alert(err.response?.data?.message || 'Payment mark failed.');
+    }
+  };
+
+  const handleDeleteFee = async (fee) => {
+    const studentName = fee.student?.name || 'this disciple';
+    const confirmMsg = `Are you sure you want to permanently delete this fee invoice of ₹${Number(fee.amount).toLocaleString('en-IN')} for ${studentName} (${fee.month || 'Current Term'})?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingId(fee.id);
+    try {
+      const res = await api.delete(`/fees/${fee.id}`);
+      if (res.data.success) {
+        await loadData();
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete fee invoice.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDownloadReceipt = async (fee) => {
+    setDownloadingId(fee.id);
+    try {
+      await downloadReceiptPDF(fee.id, `${fee.student?.name || 'Student'}_${fee.month || 'Tuition'}`);
+    } catch (err) {
+      alert(err.message || 'Failed to download receipt PDF.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -174,17 +206,21 @@ export default function AdminFees() {
                     {fee.payment_ref || '—'}
                   </td>
 
-                  <td className="p-4 text-right space-x-2">
+                  <td className="p-4 text-right space-x-2 whitespace-nowrap">
                     {fee.status === 'paid' ? (
-                      <a
-                        href={`/api/v1/fees/receipt/${fee.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#333333] hover:border-[#d4af37] text-[#d4af37] text-xs font-cinzel font-bold transition-all"
+                      <button
+                        onClick={() => handleDownloadReceipt(fee)}
+                        disabled={downloadingId === fee.id}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#333333] hover:border-[#d4af37] text-[#d4af37] text-xs font-cinzel font-bold transition-all disabled:opacity-50"
+                        title="Download official PDF receipt"
                       >
-                        <Download className="w-3 h-3" />
-                        <span>PDF</span>
-                      </a>
+                        {downloadingId === fee.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin text-[#d4af37]" />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        <span>{downloadingId === fee.id ? 'Loading...' : 'PDF'}</span>
+                      </button>
                     ) : (
                       <button
                         onClick={() => handleMarkPaid(fee.id)}
@@ -193,6 +229,19 @@ export default function AdminFees() {
                         Mark Paid
                       </button>
                     )}
+
+                    <button
+                      onClick={() => handleDeleteFee(fee)}
+                      disabled={deletingId === fee.id}
+                      className="p-1.5 rounded-lg border border-rose-900/40 text-rose-400 bg-rose-950/20 hover:bg-rose-950/50 hover:border-rose-700 transition-all inline-flex items-center justify-center disabled:opacity-50"
+                      title="Delete fee invoice"
+                    >
+                      {deletingId === fee.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
                   </td>
                 </tr>
               ))}

@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, CheckCircle, Clock, AlertTriangle, Download, ArrowRight, X } from 'lucide-react';
+import { CreditCard, CheckCircle, Clock, AlertTriangle, Download, ArrowRight, X, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { loadRazorpay, RAZORPAY_KEY_ID } from '../../utils/razorpay';
+import { downloadReceiptPDF } from '../../utils/receipt';
 
 export default function StudentFees() {
   const { user } = useAuth();
   const [fees, setFees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [payingFee, setPayingFee] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingFeeId, setProcessingFeeId] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState(null); // { type: 'success' | 'error' | 'info', message }
 
   useEffect(() => {
@@ -33,7 +34,7 @@ export default function StudentFees() {
     err?.response?.data?.message || err?.message || fallback;
 
   const verifyPayment = async (response, fee) => {
-    setIsProcessing(true);
+    setProcessingFeeId(fee.id);
     setPaymentStatus({ type: 'info', message: 'Verifying your payment with the academy server...' });
     try {
       const res = await api.post('/verify-payment', {
@@ -44,7 +45,7 @@ export default function StudentFees() {
       if (res.data.success) {
         setPaymentStatus({
           type: 'success',
-          message: `Payment of ₹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.month || 'Current Month'} verified. Payment ID: ${response.razorpay_payment_id}`,
+          message: `Payment of ₹${Number(fee.amount).toLocaleString('en-IN')} for ${fee.month || 'Current Month'} verified! Payment ID: ${response.razorpay_payment_id}`,
         });
         await loadFees();
       }
@@ -55,14 +56,13 @@ export default function StudentFees() {
         message: `${getErrorMessage(err, 'Payment verification failed.')} If money was debited, please share Payment ID ${response.razorpay_payment_id} with the academy office.`,
       });
     } finally {
-      setIsProcessing(false);
+      setProcessingFeeId(null);
     }
   };
 
-  const handlePay = async () => {
-    if (!payingFee) return;
-    const fee = payingFee;
-    setIsProcessing(true);
+  const handlePay = async (fee) => {
+    if (!fee) return;
+    setProcessingFeeId(fee.id);
     setPaymentStatus(null);
 
     try {
@@ -72,7 +72,7 @@ export default function StudentFees() {
       const orderRes = await api.post('/create-order', { fee_id: fee.id });
       const { order_id, amount, currency, key_id } = orderRes.data.data;
 
-      // 2. Open Razorpay Standard Checkout modal
+      // 2. Open Razorpay Standard Checkout modal directly
       const rzp = new Razorpay({
         key: RAZORPAY_KEY_ID || key_id,
         amount,
@@ -92,7 +92,7 @@ export default function StudentFees() {
         handler: (response) => verifyPayment(response, fee),
         modal: {
           ondismiss: () => {
-            setIsProcessing(false);
+            setProcessingFeeId(null);
             setPaymentStatus((prev) =>
               prev?.type === 'error' ? prev : { type: 'info', message: 'Payment cancelled. Your fee is still pending - you can retry anytime.' }
             );
@@ -108,12 +108,22 @@ export default function StudentFees() {
         });
       });
 
-      setPayingFee(null);
       rzp.open();
     } catch (err) {
       console.error('Payment initiation failed:', err);
       setPaymentStatus({ type: 'error', message: getErrorMessage(err, 'Unable to start payment. Please try again.') });
-      setIsProcessing(false);
+      setProcessingFeeId(null);
+    }
+  };
+
+  const handleDownloadReceipt = async (fee) => {
+    setDownloadingId(fee.id);
+    try {
+      await downloadReceiptPDF(fee.id, fee.month || 'Tuition_Fee');
+    } catch (err) {
+      alert(err.message || 'Failed to download receipt PDF.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -222,24 +232,33 @@ export default function StudentFees() {
                   </td>
                   <td className="p-4 text-right">
                     {fee.status === 'paid' ? (
-                      <a
-                        href={`/api/v1/fees/receipt/${fee.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#d4af37] text-[#d4af37] hover:bg-[#d4af37] hover:text-[#111111] text-xs font-cinzel font-bold shadow transition-all"
+                      <button
+                        onClick={() => handleDownloadReceipt(fee)}
+                        disabled={downloadingId === fee.id}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#0f0f0f] border border-[#d4af37] text-[#d4af37] hover:bg-[#d4af37] hover:text-[#111111] text-xs font-cinzel font-bold shadow transition-all disabled:opacity-50"
+                        title="Download verified academy PDF receipt"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download PDF</span>
-                      </a>
+                        {downloadingId === fee.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#d4af37]" />
+                        ) : (
+                          <Download className="w-3.5 h-3.5" />
+                        )}
+                        <span>{downloadingId === fee.id ? 'Downloading...' : 'Download PDF'}</span>
+                      </button>
                     ) : (
                       <button
                         id={`pay-fee-${fee.id}`}
-                        onClick={() => setPayingFee(fee)}
-                        disabled={isProcessing}
-                        className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-[#d4af37] text-[#111111] hover:bg-[#ffd700] text-xs font-cinzel font-bold shadow transition-all disabled:opacity-50"
+                        onClick={() => handlePay(fee)}
+                        disabled={processingFeeId === fee.id}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#d4af37] text-[#111111] hover:bg-[#ffd700] text-xs font-cinzel font-bold shadow hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                        title="Pay tuition fee securely using Razorpay (UPI / Card / NetBanking)"
                       >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span>Pay Online</span>
+                        {processingFeeId === fee.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#111111]" />
+                        ) : (
+                          <CreditCard className="w-3.5 h-3.5" />
+                        )}
+                        <span>{processingFeeId === fee.id ? 'Opening Razorpay...' : 'Pay via Razorpay'}</span>
                       </button>
                     )}
                   </td>
@@ -249,68 +268,6 @@ export default function StudentFees() {
           </table>
         </div>
       </div>
-
-      {/* Online Payment Modal */}
-      {payingFee && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#111111] rounded-3xl border-2 border-[#d4af37] max-w-md w-full p-6 sm:p-8 shadow-2xl relative text-white">
-            <button
-              onClick={() => setPayingFee(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-[#1a1a1a] text-[#888888] hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center mb-6">
-              <div className="w-12 h-12 rounded-full bg-[#1a1a1a] text-[#d4af37] border border-[#d4af37] flex items-center justify-center mx-auto mb-2 shadow">
-                <CreditCard className="w-6 h-6" />
-              </div>
-              <h3 className="font-cinzel font-bold text-xl text-white">
-                Tuition Fee Payment
-              </h3>
-              <p className="text-xs text-[#888888] font-outfit mt-0.5">
-                Sri Ruthraalayaa Bharathanatyam Academy
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-[#161616] border border-[#262626] space-y-2 mb-6 text-xs text-[#e0e0e0]">
-              <div className="flex justify-between">
-                <span className="text-[#888888]">Term / Month:</span>
-                <span className="font-bold text-white">{payingFee.month || 'Current Month'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#888888]">Total Due Amount:</span>
-                <span className="font-cinzel font-bold text-base text-[#ffd700]">
-                  ₹{Number(payingFee.amount).toLocaleString('en-IN')}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#888888]">Payment Channel:</span>
-                <span className="font-semibold text-emerald-400">UPI / Cards / NetBanking (Razorpay)</span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-center mb-6">
-              <p className="text-xs font-semibold text-[#ffd700] font-cinzel">
-                Secure Online Payment
-              </p>
-              <p className="text-[11px] text-[#aaaaaa] mt-1">
-                You will be redirected to Razorpay's secure checkout. Once your payment is verified, your official academy PDF receipt is generated automatically.
-              </p>
-            </div>
-
-            <button
-              id="razorpay-checkout-button"
-              onClick={handlePay}
-              disabled={isProcessing}
-              className="w-full py-3.5 rounded-xl bg-[#d4af37] text-[#111111] hover:bg-[#ffd700] font-cinzel font-bold text-xs uppercase tracking-wider shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-            >
-              <span>{isProcessing ? 'Opening Secure Checkout...' : `Pay ₹${Number(payingFee.amount).toLocaleString('en-IN')} Securely`}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

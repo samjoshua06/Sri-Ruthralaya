@@ -9,6 +9,7 @@ router.post('/', authenticateToken, requireRole(['admin']), studentController.cr
 router.put('/:id/approve', authenticateToken, requireRole(['admin']), studentController.approveStudent);
 router.patch('/:id/approve', authenticateToken, requireRole(['admin']), studentController.approveStudent);
 router.patch('/:id/status', authenticateToken, requireRole(['admin']), studentController.toggleStudentStatus);
+router.delete('/:id', authenticateToken, requireRole(['admin']), studentController.deleteStudent);
 
 // Student or Admin route
 router.get('/:id', authenticateToken, studentController.getStudentById);

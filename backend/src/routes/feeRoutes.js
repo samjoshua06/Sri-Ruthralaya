@@ -16,5 +16,6 @@ router.patch('/:id/pay', authenticateToken, feeController.payFee);
 // Admin fee management
 router.get('/', authenticateToken, requireRole(['admin']), feeController.getAllFees);
 router.post('/', authenticateToken, requireRole(['admin']), feeController.recordFee);
+router.delete('/:id', authenticateToken, requireRole(['admin']), feeController.deleteFee);
 
 module.exports = router;
