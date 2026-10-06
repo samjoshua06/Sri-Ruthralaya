@@ -98,8 +98,71 @@ async function createOrder(req, res, next) {
     let receipt = req.body?.receipt;
     const notes = { user_id: req.user.id };
 
-    if (fee_id) {
-      const fee = await findFee(fee_id);
+    if (fee_id || req.user.role === 'student') {
+      let fee = null;
+      if (fee_id && !String(fee_id).startsWith('pending-fee') && !String(fee_id).startsWith('mock')) {
+        fee = await findFee(fee_id);
+      }
+
+      if (!fee) {
+        // Fallback: search for any existing pending fee for this student
+        const isDb = getIsDbConnected();
+        if (isDb) {
+          const studentPending = await db.fee.findMany({
+            where: { student_id: req.user.id, status: 'pending' },
+            take: 1,
+          });
+          if (studentPending.length > 0) {
+            fee = studentPending[0];
+          } else {
+            // Auto create pending fee for student's enrolled batch
+            const enr = await db.enrollment.findFirst({ where: { student_id: req.user.id } });
+            let amountVal = 2400;
+            if (enr) {
+              const batch = await db.batch.findUnique({ where: { id: enr.batch_id } });
+              if (batch && batch.fee_amount) amountVal = Number(batch.fee_amount);
+            }
+            const now = new Date();
+            const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            fee = await db.fee.create({
+              data: {
+                student_id: req.user.id,
+                amount: amountVal,
+                due_date: dueDate,
+                status: 'pending',
+                month: `${monthName} Tuition`,
+              },
+            });
+          }
+        } else {
+          const studentPending = fallbackStore.fees.filter(f => f.student_id === req.user.id && f.status === 'pending');
+          if (studentPending.length > 0) {
+            fee = studentPending[0];
+          } else {
+            const enr = fallbackStore.enrollments.find(e => e.student_id === req.user.id);
+            let amountVal = 2400;
+            if (enr) {
+              const batch = fallbackStore.batches.find(b => b.id === enr.batch_id);
+              if (batch && batch.fee_amount) amountVal = Number(batch.fee_amount);
+            }
+            const now = new Date();
+            const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            fee = {
+              id: `fee-${Date.now()}`,
+              student_id: req.user.id,
+              amount: amountVal,
+              due_date: dueDate,
+              status: 'pending',
+              month: `${monthName} Tuition`,
+              created_at: now,
+            };
+            fallbackStore.fees.push(fee);
+          }
+        }
+      }
+
       if (!fee) {
         return res.status(404).json({ success: false, data: null, message: 'Fee record not found.' });
       }

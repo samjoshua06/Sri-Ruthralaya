@@ -88,9 +88,36 @@ async function getMyFees(req, res, next) {
     }
 
     if (isDb) {
-      const fees = await db.fee.findMany({
+      let fees = await db.fee.findMany({
         where: { student_id },
       });
+
+      // If student has no fee records yet, automatically generate their initial pending fee invoice
+      if (fees.length === 0) {
+        try {
+          const enr = await db.enrollment.findFirst({ where: { student_id } });
+          let amount = 2400;
+          if (enr) {
+            const batch = await db.batch.findUnique({ where: { id: enr.batch_id } });
+            if (batch && batch.fee_amount) amount = Number(batch.fee_amount);
+          }
+          const now = new Date();
+          const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          const newFee = await db.fee.create({
+            data: {
+              student_id,
+              amount,
+              due_date: dueDate,
+              status: 'pending',
+              month: `${monthName} Tuition`,
+            },
+          });
+          fees = [newFee];
+        } catch (autoErr) {
+          console.warn('Auto fee invoice creation note:', autoErr.message);
+        }
+      }
 
       return res.status(200).json({
         success: true,
@@ -98,7 +125,31 @@ async function getMyFees(req, res, next) {
         message: 'Student fee history retrieved.',
       });
     } else {
-      const fees = fallbackStore.fees.filter(f => f.student_id === student_id);
+      let fees = fallbackStore.fees.filter(f => f.student_id === student_id);
+
+      if (fees.length === 0) {
+        const enr = fallbackStore.enrollments.find(e => e.student_id === student_id);
+        let amount = 2400;
+        if (enr) {
+          const batch = fallbackStore.batches.find(b => b.id === enr.batch_id);
+          if (batch && batch.fee_amount) amount = Number(batch.fee_amount);
+        }
+        const now = new Date();
+        const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const newFee = {
+          id: `fee-${Date.now()}`,
+          student_id,
+          amount,
+          due_date: dueDate,
+          status: 'pending',
+          month: `${monthName} Tuition`,
+          created_at: now,
+        };
+        fallbackStore.fees.push(newFee);
+        fees = [newFee];
+      }
+
       return res.status(200).json({
         success: true,
         data: fees,

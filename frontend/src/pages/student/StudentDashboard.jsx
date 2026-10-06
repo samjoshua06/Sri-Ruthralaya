@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  CalendarCheck, 
-  Clock, 
-  CreditCard, 
-  Award, 
-  Bell, 
-  ArrowRight, 
-  CheckCircle, 
-  Sparkles, 
+import {
+  CalendarCheck,
+  Clock,
+  CreditCard,
+  Award,
+  Bell,
+  ArrowRight,
+  CheckCircle,
+  Sparkles,
   Download,
   AlertCircle,
   Loader2,
@@ -88,9 +88,12 @@ export default function StudentDashboard() {
 
     try {
       const Razorpay = await loadRazorpay();
-
-      // Create order
-      const orderRes = await api.post('/create-order', { fee_id: fee.id });
+        
+      // Create order (if fee.id is a temporary fallback, omit fee_id so server auto-resolves student fee)
+      const payload = (fee.id && !String(fee.id).startsWith('pending-fee') && !String(fee.id).startsWith('mock'))
+        ? { fee_id: fee.id }
+        : {};
+      const orderRes = await api.post('/create-order', payload);
       const { order_id, amount, currency, key_id } = orderRes.data.data;
 
       const rzp = new Razorpay({
@@ -168,11 +171,11 @@ export default function StudentDashboard() {
 
   return (
     <div className="space-y-8 font-outfit text-[#bdbdbd]">
-      
+
       {/* Top Welcome Banner in Dark Gold Theme */}
       <div className="p-8 rounded-3xl bg-gradient-to-r from-[#181818] via-[#121212] to-[#0a0a0a] text-white border-2 border-[#d4af37] shadow-[0_0_30px_rgba(212,175,55,0.2)] relative overflow-hidden">
         {/* Background Nataraja BG1.png */}
-        <div 
+        <div
           className="absolute inset-0 bg-cover bg-center opacity-20 mix-blend-luminosity pointer-events-none"
           style={{ backgroundImage: `url('/BG1.png')` }}
         />
@@ -210,13 +213,12 @@ export default function StudentDashboard() {
       {paymentStatus && (
         <div
           role="status"
-          className={`flex items-start gap-3 p-4 rounded-2xl border text-xs sm:text-sm ${
-            paymentStatus.type === 'success'
+          className={`flex items-start gap-3 p-4 rounded-2xl border text-xs sm:text-sm ${paymentStatus.type === 'success'
               ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
               : paymentStatus.type === 'error'
-              ? 'bg-red-950/60 border-red-800 text-red-300'
-              : 'bg-amber-950/40 border-amber-700/60 text-amber-200'
-          }`}
+                ? 'bg-red-950/60 border-red-800 text-red-300'
+                : 'bg-amber-950/40 border-amber-700/60 text-amber-200'
+            }`}
         >
           {paymentStatus.type === 'success' ? (
             <CheckCircle className="w-5 h-5 shrink-0" />
@@ -238,7 +240,7 @@ export default function StudentDashboard() {
 
       {/* KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        
+
         {/* Card 1: Attendance % */}
         <div className="p-6 rounded-2xl bg-[#111111] border border-[#333333] hover:border-[#d4af37]/60 shadow-xl flex items-center justify-between transition-all group">
           <div>
@@ -290,9 +292,8 @@ export default function StudentDashboard() {
                 <span className="font-cinzel font-bold text-xl text-white">
                   ₹{Number(latestFee.amount).toLocaleString('en-IN')}
                 </span>
-                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                  latestFee.status === 'paid' ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-amber-950/80 text-amber-400 border border-amber-800'
-                }`}>
+                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${latestFee.status === 'paid' ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800' : 'bg-amber-950/80 text-amber-400 border border-amber-800'
+                  }`}>
                   {latestFee.status}
                 </span>
               </div>
@@ -351,10 +352,10 @@ export default function StudentDashboard() {
 
       {/* Grid: 2 Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+
         {/* Left Col (8): Class Details & Adavu Tracker Preview */}
         <div className="lg:col-span-8 space-y-6">
-          
+
           {/* Active Training Batch Card */}
           <div className="p-6 rounded-3xl bg-[#111111] border border-[#333333] shadow-xl">
             <div className="flex items-center justify-between border-b border-[#222222] pb-4 mb-4">
@@ -434,7 +435,7 @@ export default function StudentDashboard() {
 
         {/* Right Col (4): Notices & Quick Downloads */}
         <div className="lg:col-span-4 space-y-6">
-          
+
           {/* Recent Circulars Card */}
           <div className="p-6 rounded-3xl bg-[#111111] border border-[#333333] shadow-xl">
             <h3 className="font-cinzel text-base font-bold text-white mb-4 flex items-center gap-2">

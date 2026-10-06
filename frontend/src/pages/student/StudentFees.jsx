@@ -69,7 +69,10 @@ export default function StudentFees() {
       const Razorpay = await loadRazorpay();
 
       // 1. Create order on the backend (amount is derived from the fee record server-side)
-      const orderRes = await api.post('/create-order', { fee_id: fee.id });
+      const payload = (fee.id && !String(fee.id).startsWith('pending-fee') && !String(fee.id).startsWith('mock'))
+        ? { fee_id: fee.id }
+        : {};
+      const orderRes = await api.post('/create-order', payload);
       const { order_id, amount, currency, key_id } = orderRes.data.data;
 
       // 2. Open Razorpay Standard Checkout modal directly
@@ -129,7 +132,7 @@ export default function StudentFees() {
 
   return (
     <div className="space-y-8 font-outfit text-[#bdbdbd]">
-      
+
       {/* Header */}
       <div>
         <h1 className="font-cinzel text-2xl sm:text-3xl font-bold text-white">
@@ -145,13 +148,12 @@ export default function StudentFees() {
         <div
           id="payment-status-banner"
           role="status"
-          className={`flex items-start gap-3 p-4 rounded-2xl border text-xs sm:text-sm ${
-            paymentStatus.type === 'success'
+          className={`flex items-start gap-3 p-4 rounded-2xl border text-xs sm:text-sm ${paymentStatus.type === 'success'
               ? 'bg-emerald-950/60 border-emerald-700 text-emerald-300'
               : paymentStatus.type === 'error'
-              ? 'bg-red-950/60 border-red-800 text-red-300'
-              : 'bg-amber-950/40 border-amber-700/60 text-amber-200'
-          }`}
+                ? 'bg-red-950/60 border-red-800 text-red-300'
+                : 'bg-amber-950/40 border-amber-700/60 text-amber-200'
+            }`}
         >
           {paymentStatus.type === 'success' ? (
             <CheckCircle className="w-5 h-5 shrink-0" />
