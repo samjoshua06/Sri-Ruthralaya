@@ -43,19 +43,23 @@ export function getMediaUrl(url, fallback = '/BG1.png') {
 }
 
 /**
- * Optimizes an image file from device input (up to 15MB).
- * Resizes large dimensions (max 1920px) and compresses to high-quality JPEG (0.88),
- * drastically reducing upload time and database payload while retaining stunning clarity.
+ * Optimizes an image file from device input (supports high-MB files up to 50MB).
+ * Resizes large dimensions (max 2560px) and compresses to high-quality JPEG (0.90),
+ * preserving crisp classical dance details while keeping storage performant.
  *
  * @param {File} file - Image file from file input
- * @param {number} maxDimension - Maximum width or height in pixels (default: 1920)
- * @param {number} quality - JPEG compression quality 0.1 to 1.0 (default: 0.88)
+ * @param {number} maxDimension - Maximum width or height in pixels (default: 2560)
+ * @param {number} quality - JPEG compression quality 0.1 to 1.0 (default: 0.90)
  * @returns {Promise<string>} Resolves to Base64 data URL
  */
-export function optimizeImageFile(file, maxDimension = 1920, quality = 0.88) {
+export function optimizeImageFile(file, maxDimension = 2560, quality = 0.90) {
   return new Promise((resolve, reject) => {
     if (!file) {
       return reject(new Error('No file provided'));
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      return reject(new Error('Image file is too large (maximum 50MB). Please select a file under 50MB.'));
     }
 
     // Pass SVGs directly without rasterizing

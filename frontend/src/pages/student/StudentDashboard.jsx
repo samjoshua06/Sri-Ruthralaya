@@ -40,7 +40,7 @@ export default function StudentDashboard() {
       setStudentData({
         profile: profileRes.data?.data || user,
         fees: feeRes.data?.data || [],
-        attendance: attRes.data?.data || { stats: { attendancePercentage: 100, total: 0, present: 0, absent: 0 } },
+        attendance: attRes.data?.data || { stats: { attendancePercentage: 0, total: 0, present: 0, absent: 0 } },
       });
     } catch (err) {
       console.warn('Student dashboard data fallback:', err.message);
@@ -158,12 +158,12 @@ export default function StudentDashboard() {
   const attStats = studentData?.attendance?.stats;
   const attTotal = attStats?.total ?? 0;
   const attPresent = attStats?.present ?? 0;
-  const attPct = attStats?.attendancePercentage ?? 100;
+  const attPct = attTotal > 0 ? (attStats?.attendancePercentage ?? 0) : 0;
   const latestFee = studentData?.fees?.[0] || {
-    status: 'paid',
+    status: 'pending',
     amount: 2400,
-    month: 'Current Term',
-    id: 'mock-1',
+    month: 'Current Term Tuition',
+    id: 'pending-fee-1',
   };
 
   return (
@@ -247,14 +247,14 @@ export default function StudentDashboard() {
             </span>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="font-cinzel font-bold text-3xl text-white">
-                {attPct}%
+                {attTotal === 0 ? '--' : `${attPct}%`}
               </span>
-              <span className={`text-xs font-semibold ${attPct >= 85 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {attTotal === 0 ? '(Enrolled)' : attPct >= 85 ? '(Punctual)' : '(Action Needed)'}
+              <span className={`text-xs font-semibold ${attTotal === 0 ? 'text-[#888888]' : attPct >= 85 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {attTotal === 0 ? '(Awaiting First Class)' : attPct >= 85 ? '(Punctual)' : '(Action Needed)'}
               </span>
             </div>
             <p className="text-[11px] text-[#888888] mt-1">
-              {attTotal > 0 ? `${attPresent} of ${attTotal} sessions attended` : 'Target: > 85% for exams'}
+              {attTotal > 0 ? `${attPresent} of ${attTotal} sessions attended` : 'Classes will be recorded once marked by Guru'}
             </p>
           </div>
           <div className="p-3.5 rounded-2xl bg-[#1a1a1a] text-[#d4af37] border border-[#333333] group-hover:border-[#d4af37]/60 group-hover:scale-105 transition-all">

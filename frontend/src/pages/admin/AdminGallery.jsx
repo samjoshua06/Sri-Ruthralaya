@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Image as ImageIcon, 
-  Plus, 
-  Trash2, 
-  Edit2, 
-  X, 
-  Upload, 
+import {
+  Image as ImageIcon,
+  Plus,
+  Trash2,
+  Edit2,
+  X,
+  Upload,
   ExternalLink,
   Filter,
   Eye,
@@ -33,6 +33,8 @@ export default function AdminGallery() {
   });
   const [imagePreview, setImagePreview] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [uploadMode, setUploadMode] = useState('system'); // 'system' | 'url'
+  const [selectedFileMeta, setSelectedFileMeta] = useState(null); // { name, sizeMB }
 
   useEffect(() => {
     loadGallery();
@@ -56,19 +58,23 @@ export default function AdminGallery() {
   // Open Create Modal
   const handleOpenCreate = () => {
     setEditingItem(null);
+    setUploadMode('system');
+    setSelectedFileMeta(null);
     setForm({
       title: '',
       category: 'performances',
-      media_url: '/BG1.png',
+      media_url: '',
       media_type: 'image',
     });
-    setImagePreview('/BG1.png');
+    setImagePreview('');
     setModalOpen(true);
   };
 
   // Open Edit Modal
   const handleOpenEdit = (item) => {
     setEditingItem(item);
+    setUploadMode(item.media_url?.startsWith('data:') ? 'system' : 'url');
+    setSelectedFileMeta(null);
     setForm({
       title: item.title || '',
       category: item.category || 'performances',
@@ -119,19 +125,22 @@ export default function AdminGallery() {
     }
   };
 
-  // Handle File Upload from device (up to 15MB limit)
+  // Handle File Upload from device (supports high-MB files up to 50MB)
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      alert('Image file is too large (maximum 15MB). Please choose a photo under 15MB.');
+    if (file.size > 50 * 1024 * 1024) {
+      alert('Image file is too large (maximum 50MB). Please choose a photo under 50MB.');
       return;
     }
 
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+    setSelectedFileMeta({ name: file.name, sizeMB });
+
     try {
       setIsOptimizing(true);
-      const optimizedData = await optimizeImageFile(file, 1920, 0.88);
+      const optimizedData = await optimizeImageFile(file, 2560, 0.90);
       setForm((prev) => ({ ...prev, media_url: optimizedData }));
       setImagePreview(optimizedData);
     } catch (err) {
@@ -157,7 +166,7 @@ export default function AdminGallery() {
 
   return (
     <div className="space-y-6 font-outfit text-white">
-      
+
       {/* Header with Title & Quick Public View Link */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-[#111111] border border-[#333333] shadow-xl">
         <div>
@@ -200,11 +209,10 @@ export default function AdminGallery() {
           <button
             key={c.id}
             onClick={() => setActiveCategory(c.id)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition-all ${
-              activeCategory === c.id
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition-all ${activeCategory === c.id
                 ? 'bg-[#d4af37] text-[#111111] shadow'
                 : 'bg-[#111111] text-[#bdbdbd] border border-[#333333] hover:border-[#d4af37] hover:text-[#d4af37]'
-            }`}
+              }`}
           >
             {c.name}
           </button>
@@ -334,35 +342,44 @@ export default function AdminGallery() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#bdbdbd] mb-1 font-cinzel">
-                  Upload Image from Device or Enter URL *
+                <label className="block text-xs font-semibold text-[#bdbdbd] mb-1.5 font-cinzel">
+                  Choose Photo Source *
                 </label>
-                
-                <div className="space-y-2">
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="text"
-                      value={form.media_url}
-                      onChange={(e) => {
-                        setForm({ ...form, media_url: e.target.value });
-                        setImagePreview(e.target.value);
-                      }}
-                      placeholder="Paste image URL or pick file"
-                      className="flex-grow px-3.5 py-2.5 rounded-xl border border-[#333333] text-xs focus:outline-none focus:border-[#d4af37] bg-[#0f0f0f] text-white"
-                    />
 
-                    <label className={`cursor-pointer px-3.5 py-2.5 rounded-xl bg-[#0f0f0f] hover:bg-[#1a1a1a] border border-[#333333] text-[#d4af37] text-xs font-semibold flex items-center gap-1.5 flex-shrink-0 transition-colors ${isOptimizing ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                      {isOptimizing ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#d4af37]" />
-                          <span>Optimizing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Choose File</span>
-                        </>
-                      )}
+                {/* Mode Selector Tabs: Upload from System vs Add via Link */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-[#0a0a0a] rounded-xl border border-[#2b2b2b] mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setUploadMode('system')}
+                    className={`py-2 px-3 rounded-lg text-xs font-cinzel font-bold flex items-center justify-center gap-2 transition-all ${uploadMode === 'system'
+                        ? 'bg-[#d4af37] text-[#111111] shadow'
+                        : 'text-[#888888] hover:text-[#d4af37]'
+                      }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload from System</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUploadMode('url')}
+                    className={`py-2 px-3 rounded-lg text-xs font-cinzel font-bold flex items-center justify-center gap-2 transition-all ${uploadMode === 'url'
+                        ? 'bg-[#d4af37] text-[#111111] shadow'
+                        : 'text-[#888888] hover:text-[#d4af37]'
+                      }`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Add via Link / URL</span>
+                  </button>
+                </div>
+
+                {uploadMode === 'system' ? (
+                  <div className="space-y-2">
+                    <label className={`block border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${isOptimizing
+                        ? 'border-[#d4af37] bg-[#d4af37]/5'
+                        : selectedFileMeta
+                          ? 'border-emerald-500/60 bg-emerald-950/20 hover:border-emerald-400'
+                          : 'border-[#333333] hover:border-[#d4af37] bg-[#0c0c0c]'
+                      }`}>
                       <input
                         type="file"
                         accept="image/*"
@@ -370,51 +387,94 @@ export default function AdminGallery() {
                         onChange={handleFileChange}
                         className="hidden"
                       />
+                      {isOptimizing ? (
+                        <div className="flex flex-col items-center justify-center gap-2 text-[#d4af37]">
+                          <Loader2 className="w-8 h-8 animate-spin" />
+                          <span className="text-xs font-cinzel font-bold">Optimizing High-Resolution Photo...</span>
+                          <span className="text-[11px] text-[#aaaaaa]">Preserving crystal-clear Bharatanatyam details</span>
+                        </div>
+                      ) : selectedFileMeta ? (
+                        <div className="flex flex-col items-center justify-center gap-1.5 text-white">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                          <span className="text-xs font-semibold text-emerald-300 font-cinzel">
+                            {selectedFileMeta.name} ({selectedFileMeta.sizeMB} MB)
+                          </span>
+                          <span className="text-[11px] text-[#888888]">
+                            Click or drag to choose a different photo
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-2 text-white">
+                          <Upload className="w-8 h-8 text-[#d4af37]" />
+                          <div>
+                            <span className="text-xs font-cinzel font-bold text-white block">
+                              Click to browse or drop photo from your system
+                            </span>
+                            <span className="text-[11px] text-[#888888] block mt-0.5">
+                              Supports high-MB DSLR &amp; studio photos up to <span className="text-[#d4af37] font-semibold">50MB</span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </label>
                   </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={form.media_url}
+                      onChange={(e) => {
+                        setForm({ ...form, media_url: e.target.value });
+                        setImagePreview(e.target.value);
+                      }}
+                      placeholder="Paste image link (https://... or /BG1.png)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#333333] text-xs focus:outline-none focus:border-[#d4af37] bg-[#0f0f0f] text-white"
+                    />
 
-                  <p className="text-[11px] text-[#888888]">
-                    Max file size: <span className="text-[#d4af37] font-semibold">15MB</span> (automatically optimized for high performance &amp; HD display).
-                  </p>
-
-                  {/* Brand Presets */}
-                  <div className="flex gap-1.5 flex-wrap">
-                    <span className="text-[10px] text-[#777777] self-center">Brand Presets:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({ ...form, media_url: '/BG1.png' });
-                        setImagePreview('/BG1.png');
-                      }}
-                      className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
-                    >
-                      Nataraja BG1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({ ...form, media_url: '/BG.2.png' });
-                        setImagePreview('/BG.2.png');
-                      }}
-                      className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
-                    >
-                      Salangai BG2
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({ ...form, media_url: '/logo.png' });
-                        setImagePreview('/logo.png');
-                      }}
-                      className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
-                    >
-                      Logo Emblem
-                    </button>
+                    {/* Brand Presets */}
+                    <div className="flex gap-1.5 flex-wrap items-center pt-1">
+                      <span className="text-[10px] text-[#777777]">Brand Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm({ ...form, media_url: '/BG1.png' });
+                          setImagePreview('/BG1.png');
+                        }}
+                        className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
+                      >
+                        Nataraja BG1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm({ ...form, media_url: '/BG.2.png' });
+                          setImagePreview('/BG.2.png');
+                        }}
+                        className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
+                      >
+                        Salangai BG2
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm({ ...form, media_url: '/logo.png' });
+                          setImagePreview('/logo.png');
+                        }}
+                        className="px-2 py-0.5 rounded text-[10px] bg-[#0f0f0f] border border-[#333333] text-[#bdbdbd] hover:border-[#d4af37]"
+                      >
+                        Logo Emblem
+                      </button>
+                    </div>
                   </div>
+                )}
 
-                  {/* Live Preview Box */}
-                  {imagePreview && (
-                    <div className="h-36 w-full rounded-xl overflow-hidden border border-[#d4af37]/40 bg-[#0a0a0a] relative mt-2">
+                {/* Live Preview Box */}
+                {imagePreview && (
+                  <div className="mt-3">
+                    <span className="text-[10px] font-cinzel text-[#888888] uppercase tracking-wider block mb-1">
+                      Live Image Preview
+                    </span>
+                    <div className="h-40 w-full rounded-xl overflow-hidden border border-[#d4af37]/40 bg-[#0a0a0a] relative">
                       <img
                         src={getMediaUrl(imagePreview)}
                         alt="Preview"
@@ -425,8 +485,8 @@ export default function AdminGallery() {
                         }}
                       />
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 flex justify-end gap-3">

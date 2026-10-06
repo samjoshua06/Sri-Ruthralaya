@@ -59,7 +59,7 @@ export default function StudentAttendance() {
     late: records.filter(r => r.status === 'late').length,
     attendancePercentage: records.length > 0
       ? Math.round((records.filter(r => r.status === 'present').length / records.length) * 100)
-      : 100,
+      : 0,
   };
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -178,13 +178,17 @@ export default function StudentAttendance() {
           </span>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="font-cinzel font-bold text-3xl text-white block">
-              {stats.attendancePercentage}%
+              {stats.total === 0 ? '--' : `${stats.attendancePercentage}%`}
             </span>
           </div>
           <span className={`text-[11px] font-semibold block mt-1 ${
-            stats.attendancePercentage >= 85 ? 'text-emerald-400' : 'text-amber-400'
+            stats.total === 0 ? 'text-[#888888]' : stats.attendancePercentage >= 85 ? 'text-emerald-400' : 'text-amber-400'
           }`}>
-            {stats.attendancePercentage >= 85 ? '✓ Eligible for University Exams' : '⚠ Below 85% Benchmark'}
+            {stats.total === 0
+              ? 'Awaiting first marked class by Guru'
+              : stats.attendancePercentage >= 85
+              ? '✓ Eligible for University Exams'
+              : '⚠ Below 85% Benchmark'}
           </span>
         </div>
 

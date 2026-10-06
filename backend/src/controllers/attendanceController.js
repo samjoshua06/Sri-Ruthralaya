@@ -387,7 +387,7 @@ async function getStudentAttendance(req, res, next) {
       const present = records.filter(r => r.status === 'present').length;
       const late = records.filter(r => r.status === 'late').length;
       const absent = records.filter(r => r.status === 'absent').length;
-      const pct = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 100;
+      const pct = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 0;
 
       const todayRecord = records.find(r => r.date === todayStr);
 
@@ -395,7 +395,7 @@ async function getStudentAttendance(req, res, next) {
         success: true,
         data: {
           records,
-          stats: { total, present, late, absent, attendancePercentage: pct },
+          stats: { total, present, late, absent, attendancePercentage: pct, hasRecords: total > 0 },
           todayRecord: todayRecord || null,
         },
         message: 'Student attendance retrieved.',
@@ -413,7 +413,7 @@ async function getStudentAttendance(req, res, next) {
       const present = records.filter(r => r.status === 'present').length;
       const late = records.filter(r => r.status === 'late').length;
       const absent = records.filter(r => r.status === 'absent').length;
-      const pct = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 92;
+      const pct = total > 0 ? Math.round(((present + late * 0.5) / total) * 100) : 0;
 
       const todayRecord = records.find(r => r.date === todayStr);
 
@@ -421,7 +421,7 @@ async function getStudentAttendance(req, res, next) {
         success: true,
         data: {
           records,
-          stats: { total, present, late, absent, attendancePercentage: pct },
+          stats: { total, present, late, absent, attendancePercentage: pct, hasRecords: total > 0 },
           todayRecord: todayRecord || null,
         },
         message: 'Student attendance retrieved.',

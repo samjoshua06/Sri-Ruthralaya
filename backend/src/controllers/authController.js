@@ -80,6 +80,25 @@ async function register(req, res, next) {
             status: 'pending',
           },
         });
+
+        try {
+          const batch = await db.batch.findUnique({ where: { id: validated.batch_id } });
+          const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+          const now = new Date();
+          const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          await db.fee.create({
+            data: {
+              student_id: newUser.id,
+              amount: feeAmount,
+              due_date: dueDate,
+              status: 'pending',
+              month: `${monthName} Tuition`,
+            },
+          });
+        } catch (fErr) {
+          console.warn('Fee invoice creation skipped during registration:', fErr.message);
+        }
       }
 
       return res.status(201).json({
@@ -126,6 +145,21 @@ async function register(req, res, next) {
           batch_id: validated.batch_id,
           joined_date: new Date(),
           status: 'pending',
+        });
+
+        const batch = fallbackStore.batches.find(b => b.id === validated.batch_id);
+        const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+        const now = new Date();
+        const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        fallbackStore.fees.push({
+          id: `fee-${Date.now()}`,
+          student_id: newUser.id,
+          amount: feeAmount,
+          due_date: dueDate,
+          status: 'pending',
+          month: `${monthName} Tuition`,
+          created_at: now,
         });
       }
 

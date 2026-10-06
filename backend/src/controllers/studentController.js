@@ -58,7 +58,7 @@ async function getAllStudents(req, res, next) {
         const attendances = s.attendances || [];
         const totalAtt = attendances.length;
         const presentAtt = attendances.filter(a => a.status === 'present').length;
-        const attendancePct = totalAtt > 0 ? Math.round((presentAtt / totalAtt) * 100) : 100;
+        const attendancePct = totalAtt > 0 ? Math.round((presentAtt / totalAtt) * 100) : 0;
         const activeBatch = (s.enrollments && s.enrollments[0]?.batch) || null;
         const latestFee = (s.fees && s.fees[0]) || null;
 
@@ -72,7 +72,7 @@ async function getAllStudents(req, res, next) {
           created_at: s.created_at,
           batch: activeBatch ? { id: activeBatch.id, name: activeBatch.name, level: activeBatch.level } : null,
           attendancePct,
-          feeStatus: latestFee ? latestFee.status : 'paid',
+          feeStatus: latestFee ? latestFee.status : 'pending',
         };
       });
 
@@ -95,7 +95,7 @@ async function getAllStudents(req, res, next) {
         const batch = enrs.length > 0 ? fallbackStore.batches.find(b => b.id === enrs[0].batch_id) : null;
         const atts = fallbackStore.attendances.filter(a => a.student_id === s.id);
         const present = atts.filter(a => a.status === 'present').length;
-        const attendancePct = atts.length > 0 ? Math.round((present / atts.length) * 100) : 92;
+        const attendancePct = atts.length > 0 ? Math.round((present / atts.length) * 100) : 0;
         const studentFees = fallbackStore.fees.filter(f => f.student_id === s.id);
         const latestFee = studentFees[studentFees.length - 1];
 
@@ -109,7 +109,7 @@ async function getAllStudents(req, res, next) {
           created_at: s.created_at,
           batch: batch ? { id: batch.id, name: batch.name, level: batch.level } : null,
           attendancePct,
-          feeStatus: latestFee ? latestFee.status : 'paid',
+          feeStatus: latestFee ? latestFee.status : 'pending',
         };
       });
 
@@ -174,7 +174,7 @@ async function getStudentById(req, res, next) {
       const attendances = student.attendances || [];
       const totalAtt = attendances.length;
       const presentCount = attendances.filter(a => a.status === 'present').length;
-      const attendancePct = totalAtt > 0 ? Math.round((presentCount / totalAtt) * 100) : 100;
+      const attendancePct = totalAtt > 0 ? Math.round((presentCount / totalAtt) * 100) : 0;
 
       const { password_hash, ...safeData } = student;
       return res.status(200).json({
@@ -202,7 +202,7 @@ async function getStudentById(req, res, next) {
 
       const totalAtt = attendances.length;
       const presentCount = attendances.filter(a => a.status === 'present').length;
-      const attendancePct = totalAtt > 0 ? Math.round((presentCount / totalAtt) * 100) : 90;
+      const attendancePct = totalAtt > 0 ? Math.round((presentCount / totalAtt) * 100) : 0;
 
       return res.status(200).json({
         success: true,
@@ -270,6 +270,26 @@ async function createStudent(req, res, next) {
             status: 'active',
           },
         });
+
+        // Automatically create pending initial tuition fee invoice
+        try {
+          const batch = await db.batch.findUnique({ where: { id: validated.batch_id } });
+          const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+          const now = new Date();
+          const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          await db.fee.create({
+            data: {
+              student_id: student.id,
+              amount: feeAmount,
+              due_date: dueDate,
+              status: 'pending',
+              month: `${monthName} Tuition`,
+            },
+          });
+        } catch (fErr) {
+          console.warn('Initial fee creation skipped:', fErr.message);
+        }
       }
 
       await recordAdminActivity({
@@ -307,6 +327,21 @@ async function createStudent(req, res, next) {
           batch_id: validated.batch_id,
           joined_date: new Date(),
           status: 'active',
+        });
+
+        const batch = fallbackStore.batches.find(b => b.id === validated.batch_id);
+        const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+        const now = new Date();
+        const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        fallbackStore.fees.push({
+          id: `fee-${Date.now()}`,
+          student_id: newStu.id,
+          amount: feeAmount,
+          due_date: dueDate,
+          status: 'pending',
+          month: `${monthName} Tuition`,
+          created_at: now,
         });
       }
 
@@ -354,16 +389,45 @@ async function approveStudent(req, res, next) {
         data: { status: 'active' },
       });
 
-      if (batch_id) {
+      let assignedBatchId = batch_id;
+      if (!assignedBatchId) {
+        const existingEnr = await db.enrollment.findFirst({ where: { student_id: id } });
+        if (existingEnr) assignedBatchId = existingEnr.batch_id;
+      }
+
+      if (assignedBatchId) {
         await db.enrollment.upsert({
           where: { student_id: id },
-          update: { batch_id, status: 'active' },
+          update: { batch_id: assignedBatchId, status: 'active' },
           create: {
             student_id: id,
-            batch_id,
+            batch_id: assignedBatchId,
             status: 'active',
           },
         });
+
+        // Ensure student has a pending fee invoice if none exists
+        try {
+          const existingFees = await db.fee.findMany({ where: { student_id: id } });
+          if (existingFees.length === 0) {
+            const batch = await db.batch.findUnique({ where: { id: assignedBatchId } });
+            const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+            const now = new Date();
+            const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            await db.fee.create({
+              data: {
+                student_id: id,
+                amount: feeAmount,
+                due_date: dueDate,
+                status: 'pending',
+                month: `${monthName} Tuition`,
+              },
+            });
+          }
+        } catch (feeErr) {
+          console.warn('Auto fee invoice creation note:', feeErr.message);
+        }
       }
 
       await recordAdminActivity({
@@ -387,18 +451,38 @@ async function approveStudent(req, res, next) {
       }
       student.status = 'active';
 
-      if (batch_id) {
-        const enr = fallbackStore.enrollments.find(e => e.student_id === id);
-        if (enr) {
-          enr.batch_id = batch_id;
-          enr.status = 'active';
-        } else {
-          fallbackStore.enrollments.push({
-            id: `enr-${Date.now()}`,
+      let targetBatchId = batch_id;
+      const enr = fallbackStore.enrollments.find(e => e.student_id === id);
+      if (enr) {
+        if (batch_id) enr.batch_id = batch_id;
+        enr.status = 'active';
+        targetBatchId = enr.batch_id;
+      } else if (batch_id) {
+        fallbackStore.enrollments.push({
+          id: `enr-${Date.now()}`,
+          student_id: id,
+          batch_id,
+          joined_date: new Date(),
+          status: 'active',
+        });
+      }
+
+      if (targetBatchId) {
+        const existingFees = fallbackStore.fees.filter(f => f.student_id === id);
+        if (existingFees.length === 0) {
+          const batch = fallbackStore.batches.find(b => b.id === targetBatchId);
+          const feeAmount = batch?.fee_amount ? Number(batch.fee_amount) : 2400;
+          const now = new Date();
+          const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          const dueDate = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          fallbackStore.fees.push({
+            id: `fee-${Date.now()}`,
             student_id: id,
-            batch_id,
-            joined_date: new Date(),
-            status: 'active',
+            amount: feeAmount,
+            due_date: dueDate,
+            status: 'pending',
+            month: `${monthName} Tuition`,
+            created_at: now,
           });
         }
       }
